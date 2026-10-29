@@ -326,7 +326,15 @@ def _lower_assert_metadata(mx, args, kwargs):
     return None
 
 
-@mlx_lowering("alias", aten=(torch.ops.aten.alias.default,))
+# MLX arrays are immutable, so a copy or a detached view is the same value.
+@mlx_lowering(
+    "alias",
+    aten=(
+        torch.ops.aten.alias.default,
+        torch.ops.aten.clone.default,
+        torch.ops.aten.detach.default,
+    ),
+)
 def _lower_alias(mx, args, kwargs):
     return args[0]
 
@@ -633,7 +641,11 @@ def _lower_split_with_sizes(mx, args, kwargs):
 
 @mlx_lowering(
     "reshape",
-    aten=(torch.ops.aten.reshape.default, torch.ops.aten.view.default),
+    aten=(
+        torch.ops.aten.reshape.default,
+        torch.ops.aten.view.default,
+        torch.ops.aten._unsafe_view.default,
+    ),
     methods=("reshape",),
     aliases=("view",),
 )
@@ -661,7 +673,11 @@ def _lower_index_select(mx, args, kwargs):
     return mx.take(args[0], args[2], axis=args[1])
 
 
-@mlx_lowering("numpy_transpose", aten=(torch.ops.aten.numpy_T.default,))
+# aten.t only accepts tensors of rank <= 2, where it reverses the axes too.
+@mlx_lowering(
+    "numpy_transpose",
+    aten=(torch.ops.aten.numpy_T.default, torch.ops.aten.t.default),
+)
 def _lower_numpy_transpose(mx, args, kwargs):
     return mx.transpose(args[0], axes=tuple(reversed(range(args[0].ndim))))
 
@@ -691,6 +707,36 @@ def _lower_to_dtype(mx, args, kwargs):
 @mlx_lowering("unsqueeze", aten=(torch.ops.aten.unsqueeze.default,))
 def _lower_unsqueeze(mx, args, kwargs):
     return mx.expand_dims(args[0], axis=args[1])
+
+
+@mlx_lowering("permute", aten=(torch.ops.aten.permute.default,))
+def _lower_permute(mx, args, kwargs):
+    return mx.transpose(args[0], axes=tuple(args[1]))
+
+
+@mlx_lowering("expand", aten=(torch.ops.aten.expand.default,))
+def _lower_expand(mx, args, kwargs):
+    value, size = args[0], args[1]
+    # New leading dims may be added; -1 keeps the existing size.
+    padded = (1,) * (len(size) - value.ndim) + tuple(value.shape)
+    shape = tuple(old if new == -1 else new for old, new in zip(padded, size))
+    return mx.broadcast_to(value, shape)
+
+
+@mlx_lowering("squeeze_dim", aten=(torch.ops.aten.squeeze.dim,))
+def _lower_squeeze_dim(mx, args, kwargs):
+    # Torch leaves a dim whose size is not 1 in place; MLX would raise.
+    if args[0].shape[args[1]] != 1:
+        return args[0]
+    return mx.squeeze(args[0], axis=args[1])
+
+
+@mlx_lowering("select", aten=(torch.ops.aten.select.int,))
+def _lower_select(mx, args, kwargs):
+    value = args[0]
+    index = [slice(None)] * value.ndim
+    index[args[1]] = args[2]
+    return value[tuple(index)]
 
 
 @mlx_lowering(
@@ -724,12 +770,14 @@ def _lower_slice(mx, args, kwargs):
     return value[tuple(slices)]
 
 
-@mlx_lowering("transpose", methods=("transpose",))
+@mlx_lowering("transpose", aten=(torch.ops.aten.transpose.int,), methods=("transpose",))
 def _lower_transpose(mx, args, kwargs):
     return mx.swapaxes(args[0], args[1], args[2])
 
 
-@mlx_lowering("contiguous", methods=("contiguous",))
+@mlx_lowering(
+    "contiguous", aten=(torch.ops.aten.contiguous.default,), methods=("contiguous",)
+)
 def _lower_contiguous(mx, args, kwargs):
     return mx.contiguous(args[0])
 
