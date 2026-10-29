@@ -573,9 +573,12 @@ def _lower_getitem(mx, args, kwargs):
     return args[0][args[1]]
 
 
+# The Scalar overloads get their own names: the parity test keys one recipe per
+# name, and the Scalar schemas reject a tensor ``other``.
 @mlx_lowering(
     "add", aten=(torch.ops.aten.add.Tensor,), functions=(operator.add, torch.add)
 )
+@mlx_lowering("add_scalar", aten=(torch.ops.aten.add.Scalar,))
 def _lower_add(mx, args, kwargs):
     alpha = _arg(args, kwargs, 2, "alpha", 1)
     if alpha == 1:
@@ -586,13 +589,21 @@ def _lower_add(mx, args, kwargs):
 @mlx_lowering(
     "multiply", aten=(torch.ops.aten.mul.Tensor,), functions=(operator.mul, torch.mul)
 )
+@mlx_lowering("multiply_scalar", aten=(torch.ops.aten.mul.Scalar,))
 def _lower_multiply(mx, args, kwargs):
     return args[0] * args[1]
+
+
+@mlx_lowering("divide", aten=(torch.ops.aten.div.Tensor,))
+@mlx_lowering("divide_scalar", aten=(torch.ops.aten.div.Scalar,))
+def _lower_divide(mx, args, kwargs):
+    return args[0] / args[1]
 
 
 @mlx_lowering(
     "subtract", aten=(torch.ops.aten.sub.Tensor,), functions=(operator.sub, torch.sub)
 )
+@mlx_lowering("subtract_scalar", aten=(torch.ops.aten.sub.Scalar,))
 def _lower_subtract(mx, args, kwargs):
     alpha = _arg(args, kwargs, 2, "alpha", 1)
     if alpha == 1:
@@ -674,6 +685,26 @@ def _lower_power(mx, args, kwargs):
 @mlx_lowering("rsqrt", aten=(torch.ops.aten.rsqrt.default,))
 def _lower_rsqrt(mx, args, kwargs):
     return mx.rsqrt(args[0])
+
+
+@mlx_lowering("sqrt", aten=(torch.ops.aten.sqrt.default,))
+def _lower_sqrt(mx, args, kwargs):
+    return mx.sqrt(args[0])
+
+
+@mlx_lowering("cos", aten=(torch.ops.aten.cos.default,))
+def _lower_cos(mx, args, kwargs):
+    return mx.cos(args[0])
+
+
+@mlx_lowering("sin", aten=(torch.ops.aten.sin.default,))
+def _lower_sin(mx, args, kwargs):
+    return mx.sin(args[0])
+
+
+@mlx_lowering("negative", aten=(torch.ops.aten.neg.default,))
+def _lower_negative(mx, args, kwargs):
+    return mx.negative(args[0])
 
 
 def _admit_to_dtype(args, kwargs) -> Optional[str]:
